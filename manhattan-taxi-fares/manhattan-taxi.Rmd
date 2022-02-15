@@ -1,0 +1,143 @@
+---
+title: "Manhattan-Taxis"
+author: "Shreya Rao"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Analyze analyze a random sample of 49999 New York journeys made in 2013 to help taxi drivers maximize thoer profits. Use regression trees and random forests to build a model that can predict the locations and times when the biggest fares can be earned.
+
+```{r}
+# Loading the tidyverse
+library(tidyverse)
+
+# Reading in the taxi data
+taxi <- read.table("C:/Users/Shreya/Documents/Projects/taxi.txt", sep = ",", header = T)
+
+# Taking a look at the first few rows in taxi
+head(taxi)
+```
+
+
+Data Cleaning
+```{r}
+# Renaming the location variables,
+# dropping any journeys with zero fares and zero tips,
+# and creating the total variable as the log sum of fare and tip
+taxi <- taxi %>%
+   rename(lat = pickup_latitude, long = pickup_longitude) %>% 
+filter(fare_amount > 0 | tip_amount > 0) %>% mutate(total = log(fare_amount + tip_amount))
+```
+
+```{r}
+# Reducing the data to taxi trips starting in Manhattan
+# Manhattan is bounded by the rectangle with 
+# latitude from 40.70 to 40.83 and 
+# longitude from -74.025 to -73.93
+taxi <- taxi  %>% 
+    filter(lat >= 40.70, lat <= 40.83, long >=  -74.025, long <= -73.93)
+```
+
+```{r}
+# Loading in ggmap and viridis for nice colors
+library(ggmap)
+library(viridis)
+
+register_google(key = "AIzaSyD1M0avrjJIOodaqQrRSs2qjBX6IlMksfI", write = TRUE)
+
+# Retrieving a stored map object which originally was created by
+manhattan <- get_map("manhattan", zoom = 12, color = "bw")
+# <- readRDS("C:/Users/Shreya/Documents/Projects/manhattan.rds")
+
+# Drawing a density map with the number of journey start locations
+ggmap(manhattan, darken = 0.5) +
+   scale_fill_viridis(option = 'plasma') +
+   geom_bin2d(data = taxi, mapping = aes(x = long, y = lat), alpha = 0.6) + 
+   labs(x = "Longitude", y = "Latitude")
+```
+
+
+**Predicting Taxi Fares Using a Tree**
+```{r}
+# Loading in the tree package
+library(tree)
+
+# Fitting a tree to lat and long
+fitted_tree <- tree(total~lat+long, data=taxi)
+
+# Draw a diagram of the tree structure
+plot(fitted_tree)
+text(fitted_tree)
+```
+
+It predicts that trips where lat < 40.7237 are more expensive, which makes sense as it is downtown Manhattan.
+
+Adding some more predictors related to the time the taxi trip was made:
+```{r}
+# Loading in the lubridate package
+library(lubridate)
+
+# Generate the three new time variables
+taxi <- taxi %>% 
+    mutate(hour = hour(pickup_datetime), 
+           wday = wday(pickup_datetime, label = TRUE), 
+           month = month(pickup_datetime, label = TRUE))
+```
+
+
+```{r}
+# Fitting a tree with total as the outcome and 
+# lat, long, hour, wday, and month as predictors
+fitted_tree <- tree(total~lat+long+hour+wday+month, data=taxi)
+
+# draw a diagram of the tree structure
+plot(fitted_tree)
+text(fitted_tree)
+
+# Summarizing the performance of the tree
+summary(fitted_tree)
+```
+
+
+**Random Forest**
+```{r}
+# Loading in the randomForest package
+library(randomForest)
+
+# Fitting a random forest
+fitted_forest <- randomForest(total~lat+long+hour+wday+month, data=taxi,
+                             ntree = 80, sampsize = 10000)
+
+# Printing the fitted_forest object
+print(fitted_forest)
+```
+
+
+**Plotting the Predicted Fare**
+```{r}
+# Extracting the prediction from fitted_forest
+taxi$pred_total <- fitted_forest$predicted
+
+# Plotting the predicted mean trip prices from according to the random forest
+ggmap(manhattan, darken = 0.5) +
+   scale_fill_viridis(option = 'plasma') +
+   stat_summary_2d(data = taxi, mapping = aes(x = long, y = lat, , z = pred_total), alpha = 0.6) + 
+   labs(x = "Longitude", y = "Latitude", fill = "Predicted Fare")
+```
+
+<!-- **Plotting the Actual Fare** -->
+<!-- ```{r} -->
+<!-- # Function that returns the mean *if* there are 15 or more datapoints -->
+<!-- mean_if_enough_data <- function(x) {  -->
+<!--     ifelse(length(x) >= 15, mean(x), NA)  -->
+<!-- } -->
+
+<!-- # Plotting the mean trip prices from the data -->
+<!-- ggmap(manhattan, darken = 0.5) + -->
+<!--    scale_fill_viridis(option = 'plasma') + -->
+<!--    stat_summary_2d(data = taxi, mapping = aes(x = long, y = lat, ,  -->
+<!--                         z = total, fun = mean_if_enough_data), alpha = 0.6) +  -->
+<!--    labs(x = "Longitude", y = "Latitude", fill = "Predicted Fare") -->
+<!-- ``` -->
+
