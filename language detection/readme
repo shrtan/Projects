@@ -1,0 +1,23 @@
+Deploy language detector model with FastAPI, Docker, and Heroku
+
+1. Build the model (working model folder)
+
+2. Save the pickle file in model-detector
+
+3. Create Docker container
+docker build -t app-name .
+docker run -p 80:80 app-name
+
+4. Create Git repo
+If this repo is cloned, this step is not needed. Or delete this git repo with rm -rf .git and start with a new one:
+git init
+git add .
+git commit -m "initial commit"
+git branch -M main
+
+5. Create Heroku project
+heroku login
+heroku create your-app-name
+heroku git:remote your-app-name
+heroku stack:set container
+git push heroku main
